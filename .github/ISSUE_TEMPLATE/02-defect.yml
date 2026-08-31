@@ -1,0 +1,45 @@
+name: Defect in the specification
+description: An internal contradiction, wrong unit or scale, broken cross-reference, or something the draft states incorrectly
+title: "[defect] "
+labels: ["defect"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Defects are decided on the record rather than quietly edited, because a
+        "fix" to a unit or a scale changes what goes into the file.
+  - type: textarea
+    id: conflict
+    attributes:
+      label: What conflicts with what
+      description: Quote both places, with section numbers.
+      placeholder: |
+        §5.2 says EffectiveLength (16) is UINT16, scale 1, mm
+        §5.3 says EffectiveLengthPort (210) is UINT16, scale 100, m
+    validations:
+      required: true
+  - type: textarea
+    id: consequence
+    attributes:
+      label: What goes wrong if it stands
+      description: What does a producer or consumer get wrong as a result?
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - Wrong unit, scale or base type
+        - Two sections contradict each other
+        - Field ID range or allocation conflict
+        - RFC 2119 keyword is wrong or inconsistent
+        - Cross-reference, table or typo
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: fix
+    attributes:
+      label: Suggested resolution
+      description: Which side you believe is correct, and why. Note if either choice would change existing files.

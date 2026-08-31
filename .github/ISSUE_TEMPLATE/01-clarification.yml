@@ -1,0 +1,45 @@
+name: Specification is unclear
+description: A requirement is ambiguous, underspecified, or you had to guess to implement it
+title: "[clarify] "
+labels: ["clarification"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If you had to guess, so will everyone else — and two implementations will
+        guess differently. Ambiguity is a defect, so this is a valuable report.
+  - type: input
+    id: section
+    attributes:
+      label: Section
+      description: Which part of spec/FIT_STANDARD.md
+      placeholder: "§6.3, InstrokeSampleInterval"
+    validations:
+      required: true
+  - type: textarea
+    id: text
+    attributes:
+      label: The text in question
+      description: Quote it, so we are certain we are discussing the same words.
+    validations:
+      required: true
+  - type: textarea
+    id: readings
+    attributes:
+      label: The readings you can see
+      description: What are the possible interpretations, and what does each imply for a file?
+      placeholder: |
+        Reading A: … which would mean a producer writes …
+        Reading B: … which would mean a producer writes … instead
+    validations:
+      required: true
+  - type: textarea
+    id: chose
+    attributes:
+      label: What did you do?
+      description: If you already implemented against a guess, which one, and did it interoperate?
+  - type: input
+    id: context
+    attributes:
+      label: Your context
+      description: Device, platform or library, and your affiliation if any. Optional, but it helps us weigh the answer.

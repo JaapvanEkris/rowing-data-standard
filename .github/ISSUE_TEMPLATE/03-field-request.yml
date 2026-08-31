@@ -1,0 +1,64 @@
+name: New or changed field
+description: Something the standard cannot currently express, or a field that needs a different type, scale or unit
+title: "[field] "
+labels: ["field-request", "needs-proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Start here, not with a proposal. Describe the **problem** — a good number
+        of these turn out to be already covered, or to break a shipping device in
+        a way someone else can point out in one comment.
+
+        If it survives, we will ask you to write a
+        [proposal](https://github.com/MoveLab-Studio/rowing-data-standard/blob/main/proposals/README.md).
+        Field IDs are a single scarce byte, 0–255, so nothing is allocated casually.
+  - type: textarea
+    id: measurement
+    attributes:
+      label: What are you trying to record or read?
+      description: The physical quantity or state, and why the existing fields cannot carry it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed field
+      description: As much as you can fill in. Message type, name, base type, scale, units, definition, typical range.
+      placeholder: |
+        Message:     record / session / file_creator
+        Name:
+        Base type:   UINT16 / SINT16 / UINT8 …
+        Scale:
+        Units:
+        Definition:
+        Typical range:
+      render: text
+  - type: input
+    id: precision
+    attributes:
+      label: Precision actually measured
+      description: What resolution does real hardware achieve? This decides scale, and prevents specifying precision nothing can produce.
+      placeholder: "±2 mm at the handle"
+  - type: textarea
+    id: who
+    attributes:
+      label: Who can produce and consume it today?
+      description: Any device or platform that already measures this, and anyone who would read it. A field with one producer and no consumers is worth discussing before allocating.
+    validations:
+      required: true
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Could this invalidate existing conforming files?
+      options:
+        - "No — purely additive, a new optional field"
+        - "Yes — it changes an already-allocated field"
+        - "Not sure"
+    validations:
+      required: true
+  - type: input
+    id: affiliation
+    attributes:
+      label: Your affiliation
+      description: State it if this favours a product you work on. That is fine and often decisive — it just needs saying out loud.
