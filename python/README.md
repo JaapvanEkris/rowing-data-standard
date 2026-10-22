@@ -43,6 +43,11 @@ active lap. `RowingSession.moving_time_s()` sums timer time over every lap excep
 `Rest`, and `validate` warns about rowing data inside a rest lap (light rowing is
 `Recovery`).
 
+`AverageBoatSpeed` (ID 8) uses scale 100 (0.01 m/s). When a file declares the
+same units and a different scale, the reader uses the scale in the file. Scale
+is a UINT8 and 255 is its invalid value, so an older scale of 255 does not
+surface; that missing scale is still read as 255 m/s steps.
+
 Heart rate is the native `heart_rate` field. When no sensor is connected, omit
 it rather than write 0. `cycle_length16` is the distance the boat travels in
 one stroke cycle, not cumulative `distance` and not handle travel (DriveLength).
