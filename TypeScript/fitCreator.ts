@@ -83,19 +83,14 @@ export async function sessionToFit (sessionId: number, dbPath?: string): Promise
 export async function workoutToFit (workout: WorkoutData): Promise<DataView | undefined> {
   const { session, splits } = workout
   const fitWriter = new FitWriter()
-  const versionNumber = parseInt(process.env.npm_package_version ?? '0', 10)
-  const startTime = new Date(session.startTime)
-  const endTime = new Date(session.endTime as number)
-  const maxForceCurvePointCount = session.maxForceCurveLength ?? 0
-  const totalNoLaps = splits.length ?? 0
-  const totalTime = msToFitSeconds(session.totalTime)
-  const totalMovingTime = msToFitSeconds(session.totalMovingTime)
+  // The number of points of the force curve, which is also the size of the HandleForceCurve array (the FIT limit is 127 points)
+  const maxForceCurvePointCount = Math.min(session.maxForceCurveLength ?? 0, 127)
 
   // The file header
   fitWriter.writeMessage(
     'file_id',
     {
-      time_created: fitWriter.time(endTime),
+      time_created: fitWriter.time(new Date(session.endTime as number)),
       type: 'activity',
       manufacturer: 'development',
       product: 0,
@@ -367,9 +362,9 @@ export async function workoutToFit (workout: WorkoutData): Promise<DataView | un
   fitWriter.writeMessage(
     'activity',
     {
-      timestamp: fitWriter.time(endTime),
-      local_timestamp: fitWriter.time(startTime) - startTime.getTimezoneOffset() * 60,
-      ...(totalTime != undefined ? { total_timer_time: totalTime } : {}),
+      timestamp: fitWriter.time(new Date(session.endTime as number)),
+      local_timestamp: fitWriter.time(new Date(session.startTime)) - new Date(session.startTime).getTimezoneOffset() * 60,
+      ...(session.totalTime != undefined && session.totalTime >= 0 && session.totalTime < 4294967295 ? { total_timer_time: session.totalTime / 1000 } : {}),
       num_sessions: 1,
       event: 'activity',
       event_type: 'stop',
@@ -383,7 +378,7 @@ export async function workoutToFit (workout: WorkoutData): Promise<DataView | un
   fitWriter.writeMessage(
     'device_info',
     {
-      timestamp: fitWriter.time(endTime),
+      timestamp: fitWriter.time(new Date(session.endTime as number)),
       device_index: 0,
       device_type: 0,
       manufacturer: 'development',
@@ -406,10 +401,10 @@ export async function workoutToFit (workout: WorkoutData): Promise<DataView | un
 
   /*
    * The session summary
+   * Several parameters are calculated at the closure of the session, or after it by a postprocessing run. These should be called with caution																																		  
    */
-  const sessionDragFactor = toFitUint16(session.dragFactor)
   const developerFieldValues: DeveloperFieldValue[] = [
-    ...(sessionDragFactor != undefined ? [{ developer_data_index: 0, field_num: 2, value: sessionDragFactor }] : []),
+    ...((session.dragFactor ?? 0) > 0 && Math.round(session.dragFactor) < 65535 ? [{ developer_data_index: 0, field_num: 2, value: Math.round(session.dragFactor) }] : []),
     // RecordingStrategy: StrokeBoundary
     { developer_data_index: 0, field_num: 10, value: 1 }
   ]
@@ -417,7 +412,7 @@ export async function workoutToFit (workout: WorkoutData): Promise<DataView | un
   fitWriter.writeMessage(
     'session',
     {
-      timestamp: fitWriter.time(endTime),
+      timestamp: fitWriter.time(new Date(session.endTime as number)),
       message_index: 0,
       sport: 'rowing',
       sub_sport: 'indoorRowing',
@@ -425,28 +420,28 @@ export async function workoutToFit (workout: WorkoutData): Promise<DataView | un
       event_type: 'stop',
       trigger: 'activityEnd',
       sport_profile_name: 'Row Indoor',
-      start_time: fitWriter.time(startTime),
-      ...(totalTime != undefined ? { total_elapsed_time: totalTime } : {}),
-      ...(totalTime != undefined ? { total_timer_time: totalTime } : {}),
-      ...(totalMovingTime != undefined ? { total_moving_time: totalMovingTime } : {}),
-      ...(session.totalLinearDistance != undefined ? { total_distance: session.totalLinearDistance } : {}),
-      ...(session.totalWork != undefined ? { total_work: session.totalWork } : {}),
-      ...(session.totalCalories != undefined ? { total_calories: session.totalCalories } : {}),
-      ...(session.strokeCount != undefined ? { total_cycles: session.strokeCount } : {}),
-      ...(session.averageLinearVelocity != undefined ? { avg_speed: session.averageLinearVelocity } : {}),
-      ...(session.maximumLinearVelocity != undefined ? { max_speed: session.maximumLinearVelocity } : {}),
-      ...(session.averagePower != undefined ? { avg_power: session.averagePower } : {}),
-      ...(session.maximumPower != undefined ? { max_power: session.maximumPower } : {}),
-      ...(session.averageHandleAvgForce != undefined ? { avg_force: session.averageHandleAvgForce } : {}),
-      ...(session.maximumHandleAvgForce != undefined ? { max_force: session.maximumHandleAvgForce } : {}),
-      ...((session?.averageStrokerate ?? 0) > 0 && session.averageStrokerate <= 127 ? { avg_cadence: session.averageStrokerate } : {}),
-      ...((session?.maximumStrokerate ?? 0) > 0 && session.maximumStrokerate <= 127 ? { max_cadence: session.maximumStrokerate } : {}),
+      start_time: fitWriter.time(new Date(session.startTime)),
+      ...(session.totalTime != undefined && session.totalTime >= 0 && session.totalTime < 4294967295 ? { total_elapsed_time: session.totalTime / 1000 } : {}),
+      ...(session.totalTime != undefined && session.totalTime >= 0 && session.totalTime < 4294967295 ? { total_timer_time: session.totalTime / 1000 } : {}),
+      ...(session.totalMovingTime != undefined && session.totalMovingTime >= 0 && session.totalMovingTime < 4294967295 ? { total_moving_time: session.totalMovingTime / 1000 } : {}),
+      ...(session.totalLinearDistance != undefined && session.totalLinearDistance * 100 < 4294967295 ? { total_distance: session.totalLinearDistance } : {}),
+      ...(session.totalWork != undefined && session.totalWork < 4294967295 ? { total_work: session.totalWork } : {}),
+      ...(session.totalCalories != undefined && session.totalCalories < 65535 ? { total_calories: session.totalCalories } : {}),
+      ...(session.strokeCount != undefined && session.strokeCount < 4294967295 ? { total_cycles: session.strokeCount } : {}),
+      ...(session.averageLinearVelocity != undefined && session.averageLinearVelocity >= 0 && session.averageLinearVelocity <= 8.5 ? { avg_speed: session.averageLinearVelocity } : {}),
+      ...(session.maximumLinearVelocity != undefined && session.maximumLinearVelocity >= 0 && session.maximumLinearVelocity <= 8.5 ? { max_speed: session.maximumLinearVelocity } : {}),
+      ...(session.averagePower != undefined && session.averagePower >= 0 && session.averagePower <= 1650 ? { avg_power: session.averagePower } : {}),
+      ...(session.maximumPower != undefined && session.maximumPower >= 0 && session.maximumPower <= 1650 ? { max_power: session.maximumPower } : {}),
+      ...(session.averageHandleAvgForce != undefined && session.averageHandleAvgForce >= 0 && session.averageHandleAvgForce <= 2000 ? { avg_force: session.averageHandleAvgForce } : {}),
+      ...(session.maximumHandleAvgForce != undefined && session.maximumHandleAvgForce >= 0 && session.maximumHandleAvgForce <= 2000 ? { max_force: session.maximumHandleAvgForce } : {}),
+      ...((session?.averageStrokerate ?? 0) >= 10 && session?.averageStrokerate <= 200 ? { avg_cadence: session.averageStrokerate } : {}),
+      ...((session?.maximumStrokerate ?? 0) >= 10 && session?.maximumStrokerate <= 200 ? { max_cadence: session.maximumStrokerate } : {}),
       ...((session?.minimumHeartrate ?? 0) > 0 && session.minimumHeartrate < 250 ? { min_heart_rate: session.minimumHeartrate } : {}),
       ...((session?.averageHeartrate ?? 0) > 0 && session.averageHeartrate < 250 ? { avg_heart_rate: session.averageHeartrate } : {}),
       ...((session?.maximumHeartrate ?? 0) > 0 && session.maximumHeartrate < 250 ? { max_heart_rate: session.maximumHeartrate } : {}),
-      ...(session.averageStrokeDistance != undefined ? { avg_stroke_distance: session.averageStrokeDistance } : {}),
+      ...(session.averageStrokeDistance != undefined && session.averageStrokeDistance * 100 < 65535 ? { avg_stroke_distance: session.averageStrokeDistance } : {}),
       first_lap_index: 0,
-      num_laps: totalNoLaps
+      num_laps: splits.length
     },
     developerFieldValues,
     true
@@ -473,48 +468,48 @@ export async function workoutToFit (workout: WorkoutData): Promise<DataView | un
  * markers at the start and end of that rest.
  */
 async function writeSplits (writer: any, workout: WorkoutData): Promise<void> {
-  const { session, intervals, strokes } = workout
-  const endTime = new Date(session.endTime as number)
+  const { session, intervals, splits } = workout
   const activeIntervals = intervals.filter(i => i.intensity === 'active')
   const restIntervals = intervals.filter(i => i.intensity !== 'active')
-  const activeTimerTime = msToFitSeconds(session.totalMovingTime)
-  const restTimerTime = msToFitSeconds(session.totalRestTime)
 
-  // Classify the HR of the strokes by whether they fall inside a rest split's window.
-  const restWindows = workout.splits
-    .filter(s => s.intensity !== 'active' && s.endTime !== null)
-    .map(s => ({ start: s.startTime, end: s.endTime as number }))
-  const inRest = (t: number): boolean => restWindows.some(w => t >= w.start && t <= w.end)
-  let activeSum = 0; let activeCount = 0; let activeMax = 0
-  let restSum = 0; let restCount = 0; let restMax = 0
-  for (const r of strokes) {
-    if (!(r.heartrate > 0)) continue
-    if (inRest(r.timestamp)) {
-      restSum += r.heartrate; restCount++; if (r.heartrate > restMax) restMax = r.heartrate
+  // The heartrate summaries are derived from the splits: the average heartrate of a split is weighted with the recorded length of that split,
+  // so the sum of (average heartrate x time) divided by the total time of the splits that have a heartrate is the average heartrate
+  let activeHeartrateTimeSum = 0
+  let activeTimeWithHeartrate = 0
+  let activeMaximumHeartrate = 0
+  let restHeartrateTimeSum = 0
+  let restTimeWithHeartrate = 0
+  let restMaximumHeartrate = 0
+  for (const split of splits) {
+    const hasAverageHeartrate = (split.averageHeartrate ?? 0) > 0 && (split.totalTime ?? 0) > 0
+    const hasMaximumHeartrate = (split.maximumHeartrate ?? 0) > 0
+    if (split.intensity === 'active') {
+      if (hasAverageHeartrate) { activeHeartrateTimeSum += split.averageHeartrate * split.totalTime; activeTimeWithHeartrate += split.totalTime }
+      if (hasMaximumHeartrate) { activeMaximumHeartrate = Math.max(activeMaximumHeartrate, split.maximumHeartrate) }
     } else {
-      activeSum += r.heartrate; activeCount++; if (r.heartrate > activeMax) activeMax = r.heartrate
+      if (hasAverageHeartrate) { restHeartrateTimeSum += split.averageHeartrate * split.totalTime; restTimeWithHeartrate += split.totalTime }
+      if (hasMaximumHeartrate) { restMaximumHeartrate = Math.max(restMaximumHeartrate, split.maximumHeartrate) }
     }
   }
-  const activeAvg = activeCount > 0 ? activeSum / activeCount : 0
-  const restAvg = restCount > 0 ? restSum / restCount : 0
-
+  const activeAverageHeartrate = activeTimeWithHeartrate > 0 ? activeHeartrateTimeSum / activeTimeWithHeartrate : 0
+  const restAverageHeartrate = restTimeWithHeartrate > 0 ? restHeartrateTimeSum / restTimeWithHeartrate : 0
   // Write the split summary
   writer.writeMessage(
     'split_summary',
     {
-      timestamp: writer.time(endTime),
+      timestamp: writer.time(new Date(session.endTime as number)),
       message_index: 0,
       split_type: 'interval_active',
       num_splits: activeIntervals.length,
-      ...(activeTimerTime != undefined ? { total_timer_time: activeTimerTime } : {}),
-      ...(session.totalLinearDistance != undefined ? { total_distance: session.totalLinearDistance } : {}),
-      ...(session.averageLinearVelocity != undefined ? { avg_speed: session.averageLinearVelocity } : {}),
-      ...(session.maximumLinearVelocity != undefined ? { max_speed: session.maximumLinearVelocity } : {}),
-      ...((session.averageStrokerate ?? 0) > 0 ? { avg_cadence: session.averageStrokerate } : {}),
-      ...((session.maximumStrokerate ?? 0) > 0 ? { max_cadence: session.maximumStrokerate } : {}),
-      ...(session.totalMovingCalories != undefined ? { total_calories: session.totalMovingCalories } : {}),
-      ...(activeAvg > 0 ? { avg_heart_rate: activeAvg } : {}),
-      ...(activeMax > 0 ? { max_heart_rate: activeMax } : {})
+      ...(session.totalMovingTime != undefined && session.totalMovingTime >= 0 && session.totalMovingTime < 4294967295 ? { total_timer_time: session.totalMovingTime / 1000 } : {}),
+      ...(session.totalLinearDistance != undefined && session.totalLinearDistance * 100 < 4294967295 ? { total_distance: session.totalLinearDistance } : {}),
+      ...(session.averageLinearVelocity != undefined && session.averageLinearVelocity >= 0 && session.averageLinearVelocity <= 8.5 ? { avg_speed: session.averageLinearVelocity } : {}),
+      ...(session.maximumLinearVelocity != undefined && session.maximumLinearVelocity >= 0 && session.maximumLinearVelocity <= 8.5 ? { max_speed: session.maximumLinearVelocity } : {}),
+      ...((session.averageStrokerate ?? 0) >= 10 && session.averageStrokerate <= 200 ? { avg_cadence: session.averageStrokerate } : {}),
+      ...((session.maximumStrokerate ?? 0) >= 10 && session.maximumStrokerate <= 200 ? { max_cadence: session.maximumStrokerate } : {}),
+      ...(session.totalMovingCalories != undefined && session.totalMovingCalories < 4294967295 ? { total_calories: session.totalMovingCalories } : {}),
+      ...(activeAverageHeartrate > 0 && activeAverageHeartrate < 255 ? { avg_heart_rate: activeAverageHeartrate } : {}),
+      ...(activeMaximumHeartrate > 0 && activeMaximumHeartrate < 255 ? { max_heart_rate: activeMaximumHeartrate } : {})
     },
     null,
     restIntervals.length === 0
@@ -525,19 +520,19 @@ async function writeSplits (writer: any, workout: WorkoutData): Promise<void> {
     writer.writeMessage(
       'split_summary',
       {
-        timestamp: writer.time(endTime),
+        timestamp: writer.time(new Date(session.endTime as number)),
         message_index: 1,
         split_type: 'interval_rest',
         num_splits: restIntervals.length,
-        ...(restTimerTime != undefined ? { total_timer_time: restTimerTime } : {}),
+        ...(session.totalRestTime != undefined && session.totalRestTime >= 0 && session.totalRestTime < 4294967295 ? { total_timer_time: session.totalRestTime / 1000 } : {}),
         total_distance: 0,
         avg_speed: 0,
         max_speed: 0,
         avg_cadence: 0,
         max_cadence: 0,
-        ...(session.totalRestCalories != undefined ? { total_calories: session.totalRestCalories } : {}),
-        ...(restAvg > 0 ? { avg_heart_rate: restAvg } : {}),
-        ...(restMax > 0 ? { max_heart_rate: restMax } : {})
+        ...(session.totalRestCalories != undefined && session.totalRestCalories < 4294967295 ? { total_calories: session.totalRestCalories } : {}),
+        ...(restAverageHeartrate > 0 && restAverageHeartrate < 255 ? { avg_heart_rate: restAverageHeartrate } : {}),
+        ...(restMaximumHeartrate > 0 && restMaximumHeartrate < 255 ? { max_heart_rate: restMaximumHeartrate } : {})
       },
       null,
       true
@@ -562,39 +557,35 @@ async function writeSplits (writer: any, workout: WorkoutData): Promise<void> {
  */
 async function createActiveSplit (writer: any, workout: WorkoutData, interval: Interval): Promise<void> {
   if (interval.complete !== true) { return }
-  const endTime = new Date(workout.session.endTime as number)
-  const totalTime = msToFitSeconds(interval.totalTime)
-  const totalMovingTime = msToFitSeconds(interval.totalMovingTime)
-  const dragFactor = toFitUint16(interval.dragFactor)
   const developerFieldValues: DeveloperFieldValue[] = [
-    ...(dragFactor != undefined ? [{ developer_data_index: 0, field_num: 2, value: dragFactor }] : [])
+    ...((interval.dragFactor ?? 0) > 0 && Math.round(interval.dragFactor) < 65535 ? [{ developer_data_index: 0, field_num: 2, value: Math.round(interval.dragFactor) }] : [])
   ]
 
   writer.writeMessage(
     'split',
     {
-      timestamp: writer.time(endTime),
+      timestamp: writer.time(new Date(workout.session.endTime as number)),
       message_index: interval.intervalNumber,
-      ...(interval.firstSplitNumber != undefined ? { lap_index: interval.firstSplitNumber } : {}),
+      ...(interval.firstSplitNumber != undefined && interval.firstSplitNumber < 65535 ? { lap_index: interval.firstSplitNumber } : {}),
       sport: 'rowing',
       sub_sport: 'indoorRowing',
       split_type: 'interval_active',
-      ...(totalTime != undefined ? { total_elapsed_time: totalTime } : {}),
-      ...(totalTime != undefined ? { total_timer_time: totalTime } : {}),
-      ...(totalMovingTime != undefined ? { total_moving_time: totalMovingTime } : {}),
-      ...(interval.totalLinearDistance != undefined ? { total_distance: interval.totalLinearDistance } : {}),
-      ...(interval.averageLinearVelocity != undefined ? { avg_speed: interval.averageLinearVelocity } : {}),
-      ...(interval.maximumLinearVelocity != undefined ? { max_speed: interval.maximumLinearVelocity } : {}),
-      ...(interval.averagePower != undefined ? { avg_power: interval.averagePower } : {}),
-      ...(interval.maximumPower != undefined ? { max_power: interval.maximumPower } : {}),
-      ...((interval.averageStrokerate ?? 0) > 0 ? { avg_cadence: interval.averageStrokerate } : {}),
-      ...((interval.maximumStrokerate ?? 0) > 0 ? { max_cadence: interval.maximumStrokerate } : {}),
-      ...(interval.calories != undefined ? { total_calories: interval.calories } : {}),
+      ...(interval.totalTime != undefined && interval.totalTime >= 0 && interval.totalTime < 4294967295 ? { total_elapsed_time: interval.totalTime / 1000 } : {}),
+      ...(interval.totalTime != undefined && interval.totalTime >= 0 && interval.totalTime < 4294967295 ? { total_timer_time: interval.totalTime / 1000 } : {}),
+      ...(interval.totalMovingTime != undefined && interval.totalMovingTime >= 0 && interval.totalMovingTime < 4294967295 ? { total_moving_time: interval.totalMovingTime / 1000 } : {}),
+      ...(interval.totalLinearDistance != undefined && interval.totalLinearDistance * 100 < 4294967295 ? { total_distance: interval.totalLinearDistance } : {}),
+      ...(interval.averageLinearVelocity != undefined && interval.averageLinearVelocity >= 0 && interval.averageLinearVelocity <= 8.5 ? { avg_speed: interval.averageLinearVelocity } : {}),
+      ...(interval.maximumLinearVelocity != undefined && interval.maximumLinearVelocity >= 0 && interval.maximumLinearVelocity <= 8.5 ? { max_speed: interval.maximumLinearVelocity } : {}),
+      ...(interval.averagePower != undefined && interval.averagePower >= 0 && interval.averagePower <= 1650 ? { avg_power: interval.averagePower } : {}),
+      ...(interval.maximumPower != undefined && interval.maximumPower >= 0 && interval.maximumPower <= 1650 ? { max_power: interval.maximumPower } : {}),
+      ...((interval.averageStrokerate ?? 0) >= 10 && interval.averageStrokerate <= 200 ? { avg_cadence: interval.averageStrokerate } : {}),
+      ...((interval.maximumStrokerate ?? 0) >= 10 && interval.maximumStrokerate <= 200 ? { max_cadence: interval.maximumStrokerate } : {}),
+      ...(interval.calories != undefined && interval.calories < 4294967295 ? { total_calories: interval.calories } : {}),
       start_time: writer.time(new Date(interval.startTime)),
-      ...(interval.startDistance != undefined ? { start_distance: interval.startDistance } : {}),
+      ...(interval.startDistance != undefined && interval.startDistance * 100 < 4294967295 ? { start_distance: interval.startDistance } : {}),
       ...(interval.endTime != undefined ? { end_time: writer.time(new Date(interval.endTime)) } : {}),
-      ...((interval.averageHeartrate ?? 0) > 0 ? { avg_heart_rate: interval.averageHeartrate } : {}),
-      ...((interval.maximumHeartrate ?? 0) > 0 ? { max_heart_rate: interval.maximumHeartrate } : {})
+      ...((interval.averageHeartrate ?? 0) > 0 && interval.averageHeartrate < 255 ? { avg_heart_rate: interval.averageHeartrate } : {}),
+      ...((interval.maximumHeartrate ?? 0) > 0 && interval.maximumHeartrate < 255 ? { max_heart_rate: interval.maximumHeartrate } : {})
     },
     developerFieldValues,
     (interval.intervalNumber + 1) === workout.intervals.length
@@ -606,20 +597,18 @@ async function createActiveSplit (writer: any, workout: WorkoutData, interval: I
  */
 async function createRestSplit (writer: any, workout: WorkoutData, interval: Interval): Promise<void> {
   if (interval.complete !== true) { return }
-  const endTime = new Date(workout.session.endTime as number)
-  const totalTime = msToFitSeconds(interval.totalTime)
 
   writer.writeMessage(
     'split',
     {
-      timestamp: writer.time(endTime),
+      timestamp: writer.time(new Date(workout.session.endTime as number)),
       message_index: interval.intervalNumber,
-      ...(interval.firstSplitNumber != undefined ? { lap_index: interval.firstSplitNumber } : {}),
+      ...(interval.firstSplitNumber != undefined && interval.firstSplitNumber < 65535 ? { lap_index: interval.firstSplitNumber } : {}),
       sport: 'rowing',
       sub_sport: 'indoorRowing',
       split_type: 'interval_rest',
-      ...(totalTime != undefined ? { total_elapsed_time: totalTime } : {}),
-      ...(totalTime != undefined ? { total_timer_time: totalTime } : {}),
+      ...(interval.totalTime != undefined && interval.totalTime >= 0 && interval.totalTime < 4294967295 ? { total_elapsed_time: interval.totalTime / 1000 } : {}),
+      ...(interval.totalTime != undefined && interval.totalTime >= 0 && interval.totalTime < 4294967295 ? { total_timer_time: interval.totalTime / 1000 } : {}),
       total_moving_time: 0,
       total_distance: 0,
       avg_speed: 0,
@@ -628,12 +617,12 @@ async function createRestSplit (writer: any, workout: WorkoutData, interval: Int
       max_power: 0,
       avg_cadence: 0,
       max_cadence: 0,
-      ...(interval.calories != undefined ? { total_calories: interval.calories } : {}),
+      ...(interval.calories != undefined && interval.calories < 4294967295 ? { total_calories: interval.calories } : {}),
       start_time: writer.time(new Date(interval.startTime)),
-      ...(interval.startDistance != undefined ? { start_distance: interval.startDistance } : {}),
+      ...(interval.startDistance != undefined && interval.startDistance * 100 < 4294967295 ? { start_distance: interval.startDistance } : {}),
       ...(interval.endTime != undefined ? { end_time: writer.time(new Date(interval.endTime)) } : {}),
-      ...((interval.averageHeartrate ?? 0) > 0 ? { avg_heart_rate: interval.averageHeartrate } : {}),
-      ...((interval.maximumHeartrate ?? 0) > 0 ? { max_heart_rate: interval.maximumHeartrate } : {})
+      ...((interval.averageHeartrate ?? 0) > 0 && interval.averageHeartrate < 255 ? { avg_heart_rate: interval.averageHeartrate } : {}),
+      ...((interval.maximumHeartrate ?? 0) > 0 && interval.maximumHeartrate < 255 ? { max_heart_rate: interval.maximumHeartrate } : {})
     },
     null,
     (interval.intervalNumber + 1) === workout.intervals.length
@@ -657,63 +646,55 @@ async function writeLaps (writer: any, workout: WorkoutData): Promise<void> {
 async function createActiveLap (writer: any, workout: WorkoutData, split: Split): Promise<void> {
   // It is an active lap, after we make sure it is a completed lap, we can write it
   if (split.complete !== true) { return }
-  const endTime = new Date(workout.session.endTime as number)
-  const totalNoLaps = workout.splits.length
-  const totalTime = msToFitSeconds(split.totalTime)
-  const totalMovingTime = msToFitSeconds(split.totalMovingTime)
-  const dragFactor = toFitUint16(split.dragFactor)
   const developerFieldValues: DeveloperFieldValue[] = [
-    ...(dragFactor != undefined ? [{ developer_data_index: 0, field_num: 2, value: dragFactor }] : [])
+    ...((split.dragFactor ?? 0) > 0 && Math.round(split.dragFactor) < 65535 ? [{ developer_data_index: 0, field_num: 2, value: Math.round(split.dragFactor) }] : [])
   ]
 
   writer.writeMessage(
     'lap',
     {
-      timestamp: writer.time(endTime),
+      timestamp: writer.time(new Date(workout.session.endTime as number)),
       message_index: split.splitNumber,
       sport: 'rowing',
       sub_sport: 'indoorRowing',
       event: split.fitEvent ?? 'lap',
       event_type: split.fitEventType ?? 'stop',
       intensity: 'active',
-      ...(totalNoLaps === (split.splitNumber + 1) ? { lap_trigger: 'sessionEnd' } : { lap_trigger: split.fitLapTrigger ?? 'manual' }),
+      ...(workout.splits.length === (split.splitNumber + 1) ? { lap_trigger: 'sessionEnd' } : { lap_trigger: split.fitLapTrigger ?? 'manual' }),
       start_time: writer.time(new Date(split.startTime)),
-      ...(totalTime != undefined ? { total_elapsed_time: totalTime } : {}),
-      ...(totalTime != undefined ? { total_timer_time: totalTime } : {}),
-      ...(totalMovingTime != undefined ? { total_moving_time: totalMovingTime } : {}),
-      ...(split.totalLinearDistance != undefined ? { total_distance: split.totalLinearDistance } : {}),
-      ...(split.strokeCount != undefined ? { total_cycles: split.strokeCount } : {}),
-      ...((split.averageStrokerate ?? 0) > 0 ? { avg_cadence: split.averageStrokerate } : {}),
-      ...((split.maximumStrokerate ?? 0) > 0 ? { max_cadence: split.maximumStrokerate } : {}),
-      ...(split.averageStrokeDistance != undefined ? { avg_stroke_distance: split.averageStrokeDistance } : {}),
-      ...(split.workDone != undefined ? { total_work: split.workDone } : {}),
-      ...(split.calories != undefined ? { total_calories: split.calories } : {}),
-      ...(split.averageLinearVelocity != undefined ? { avg_speed: split.averageLinearVelocity } : {}),
-      ...(split.maximumLinearVelocity != undefined ? { max_speed: split.maximumLinearVelocity } : {}),
-      ...(split.averagePower != undefined ? { avg_power: split.averagePower } : {}),
-      ...(split.maximumPower != undefined ? { max_power: split.maximumPower } : {}),
-      ...(split.averageHandleAvgForce != undefined ? { avg_force: split.averageHandleAvgForce } : {}),
-      ...(split.maximumHandleAvgForce != undefined ? { max_force: split.maximumHandleAvgForce } : {}),
-      ...((split.minimumHeartrate ?? 0) > 0 ? { min_heart_rate: split.minimumHeartrate } : {}),
-      ...((split.averageHeartrate ?? 0) > 0 ? { avg_heart_rate: split.averageHeartrate } : {}),
-      ...((split.maximumHeartrate ?? 0) > 0 ? { max_heart_rate: split.maximumHeartrate } : {})
+      ...(split.totalTime != undefined && split.totalTime >= 0 && split.totalTime < 4294967295 ? { total_elapsed_time: split.totalTime / 1000 } : {}),
+      ...(split.totalTime != undefined && split.totalTime >= 0 && split.totalTime < 4294967295 ? { total_timer_time: split.totalTime / 1000 } : {}),
+      ...(split.totalMovingTime != undefined && split.totalMovingTime >= 0 && split.totalMovingTime < 4294967295 ? { total_moving_time: split.totalMovingTime / 1000 } : {}),
+      ...(split.totalLinearDistance != undefined && split.totalLinearDistance * 100 < 4294967295 ? { total_distance: split.totalLinearDistance } : {}),
+      ...(split.strokeCount != undefined && split.strokeCount < 4294967295 ? { total_cycles: split.strokeCount } : {}),
+      ...((split.averageStrokerate ?? 0) >= 10 && split.averageStrokerate <= 200 ? { avg_cadence: split.averageStrokerate } : {}),
+      ...((split.maximumStrokerate ?? 0) >= 10 && split.maximumStrokerate <= 200 ? { max_cadence: split.maximumStrokerate } : {}),
+      ...(split.averageStrokeDistance != undefined && split.averageStrokeDistance * 100 < 65535 ? { avg_stroke_distance: split.averageStrokeDistance } : {}),
+      ...(split.workDone != undefined && split.workDone < 4294967295 ? { total_work: split.workDone } : {}),
+      ...(split.calories != undefined && split.calories < 65535 ? { total_calories: split.calories } : {}),
+      ...(split.averageLinearVelocity != undefined && split.averageLinearVelocity >= 0 && split.averageLinearVelocity <= 8.5 ? { avg_speed: split.averageLinearVelocity } : {}),
+      ...(split.maximumLinearVelocity != undefined && split.maximumLinearVelocity >= 0 && split.maximumLinearVelocity <= 8.5 ? { max_speed: split.maximumLinearVelocity } : {}),
+      ...(split.averagePower != undefined && split.averagePower >= 0 && split.averagePower <= 1650 ? { avg_power: split.averagePower } : {}),
+      ...(split.maximumPower != undefined && split.maximumPower >= 0 && split.maximumPower <= 1650 ? { max_power: split.maximumPower } : {}),
+      ...(split.averageHandleAvgForce != undefined && split.averageHandleAvgForce >= 0 && split.averageHandleAvgForce <= 2000 ? { avg_force: split.averageHandleAvgForce } : {}),
+      ...(split.maximumHandleAvgForce != undefined && split.maximumHandleAvgForce >= 0 && split.maximumHandleAvgForce <= 2000 ? { max_force: split.maximumHandleAvgForce } : {}),
+      ...((split.minimumHeartrate ?? 0) > 0 && split.minimumHeartrate < 255 ? { min_heart_rate: split.minimumHeartrate } : {}),
+      ...((split.averageHeartrate ?? 0) > 0 && split.averageHeartrate < 255 ? { avg_heart_rate: split.averageHeartrate } : {}),
+      ...((split.maximumHeartrate ?? 0) > 0 && split.maximumHeartrate < 255 ? { max_heart_rate: split.maximumHeartrate } : {})
     },
     developerFieldValues,
-    totalNoLaps === (split.splitNumber + 1)
+    workout.splits.length === (split.splitNumber + 1)
   )
 }
 
 async function createRestLap (writer: any, workout: WorkoutData, split: Split): Promise<void> {
   // First, make sure the rest lap has ended
   if (split.endTime === null) { return }
-  const endTime = new Date(workout.session.endTime as number)
-  const totalNoLaps = workout.splits.length
-  const totalTime = msToFitSeconds(split.totalTime)
 
   writer.writeMessage(
     'lap',
     {
-      timestamp: writer.time(endTime),
+      timestamp: writer.time(new Date(workout.session.endTime as number)),
       message_index: split.splitNumber,
       sport: 'rowing',
       sub_sport: 'indoorRowing',
@@ -722,24 +703,25 @@ async function createRestLap (writer: any, workout: WorkoutData, split: Split): 
       intensity: 'rest',
       lap_trigger: split.fitLapTrigger ?? 'manual',
       start_time: writer.time(new Date(split.startTime)),
-      ...(totalTime != undefined ? { total_elapsed_time: totalTime } : {}),
-      ...(totalTime != undefined ? { total_timer_time: totalTime } : {}),
+      ...(split.totalTime != undefined && split.totalTime >= 0 && split.totalTime < 4294967295 ? { total_elapsed_time: split.totalTime / 1000 } : {}),
+      ...(split.totalTime != undefined && split.totalTime >= 0 && split.totalTime < 4294967295 ? { total_timer_time: split.totalTime / 1000 } : {}),
       total_moving_time: 0,
       total_distance: 0,
       total_cycles: 0,
       avg_cadence: 0,
       max_cadence: 0,
       avg_stroke_distance: 0,
-      ...(split.calories != undefined ? { total_calories: split.calories } : {}),
+      ...(split.calories != undefined && split.calories < 65535 ? { total_calories: split.calories } : {}),
       avg_speed: 0,
       max_speed: 0,
       avg_power: 0,
       max_power: 0,
-      ...((split.averageHeartrate ?? 0) > 0 ? { avg_heart_rate: split.averageHeartrate } : {}),
-      ...((split.maximumHeartrate ?? 0) > 0 ? { max_heart_rate: split.maximumHeartrate } : {})
+      ...((split.minimumHeartrate ?? 0) > 0 && split.minimumHeartrate < 255 ? { min_heart_rate: split.minimumHeartrate } : {}),
+      ...((split.averageHeartrate ?? 0) > 0 && split.averageHeartrate < 255 ? { avg_heart_rate: split.averageHeartrate } : {}),
+      ...((split.maximumHeartrate ?? 0) > 0 && split.maximumHeartrate < 255 ? { max_heart_rate: split.maximumHeartrate } : {})
     },
     null,
-    totalNoLaps === (split.splitNumber + 1)
+    workout.splits.length === (split.splitNumber + 1)
   )
 }
 
@@ -749,11 +731,8 @@ async function createRestLap (writer: any, workout: WorkoutData, split: Split): 
  * stops the timer at its start and restarts it at its end.
  */
 async function writeEvents (writer: any, workout: WorkoutData): Promise<void> {
-  const startTime = new Date(workout.session.startTime)
-  const endTime = new Date(workout.session.endTime as number)
-
   // Start of the session
-  await addEvent(writer, startTime, 'timer', 'start')
+  await addEvent(writer, new Date(workout.session.startTime), 'timer', 'start')
 
   // Write all pauses
   let i = 0
@@ -768,7 +747,7 @@ async function writeEvents (writer: any, workout: WorkoutData): Promise<void> {
   }
 
   // Finish the session with a stop event
-  await addEvent(writer, endTime, 'timer', 'stopAll')
+  await addEvent(writer, new Date(workout.session.endTime as number), 'timer', 'stopAll')
 }
 
 async function addEvent (writer: any, time: Date, event: string, eventType: string): Promise<void> {
@@ -807,7 +786,7 @@ async function writeRecords (writer: any, workout: WorkoutData, maxForceCurvePoi
 
 /**
  * @description This creates the individual stroke. As the FitWriter does not apply the
- * declared scale to developer fields, every developer value is scaled here (see toFitUint16).
+ * declared scale to developer fields, every developer value is scaled here.
  * Some consumers require boundary markers, to mark the start and end of a session and rest periods.
  * @see {@link https://github.com/MoveLab-Studio/rowing-data-standard/blob/main/spec/FIT_STANDARD.md|the harmonised rowing data FIT specifications for definitions and more information}
  */
@@ -821,43 +800,41 @@ async function createTrackPoint (writer: any, stroke: Stroke, restWindows: { sta
   const speed = isPauseEnd ? 0 : stroke.linearVelocity
   const power = isPauseEnd ? 0 : stroke.power
 
-  const strokeWork = toFitUint16(stroke.strokeWork)
-  const dragFactor = toFitUint16(stroke.dragFactor)
-  const driveDuration = toFitUint16(stroke.driveDuration)
-  const recoveryDuration = toFitUint16(stroke.recoveryDuration)
-  const driveLength = toFitUint16(stroke.driveLength)
-  const averageBoatSpeed = toFitUint16(stroke.linearVelocity, 100)
-  const averageDriveForce = maxForceCurvePointCount > 0 ? toFitUint16(stroke.averageDriveForce, 10) : undefined
-  const peakDriveForce = maxForceCurvePointCount > 0 ? toFitUint16(stroke.peakDriveForce, 10) : undefined
-
+  // The peak force dependent values are only written when there is a force curve to report
+  const hasPeakDriveForce = maxForceCurvePointCount > 0 && (stroke.peakDriveForce ?? 0) > 0 && stroke.peakDriveForce <= 2000
   // The absolute handle position (mm) at peak force is the normalised position (0-1) along the drive length
   const peakForcePositionAbs = Math.round((stroke.peakDriveForcePosition ?? 0) * (stroke.driveLength ?? 0))
 
+  // The handle positions are derived from the drive length, so they are only reported when the drive length is plausible (100-2100 mm)
+  const hasDriveLength = (stroke.driveLength ?? 0) >= 100 && stroke.driveLength <= 2100
+
+  // The absolute handle position (mm) at peak force is the normalised position (0-1) of the peak force along the drive length
+  const peakForcePositionAbs = stroke.peakDriveForcePosition != undefined && hasDriveLength ? Math.round(stroke.peakDriveForcePosition * stroke.driveLength) : undefined
   // The force curve is sampled uniformly along the handle distance (abscissa type 2). The sample interval is the
   // spacing of the samples over the full curve, so it stays correct when the curve has to be cut to the declared size
   const forceCurve = stroke.forceCurve ?? []
   const forceCurvePointCount = Math.min(forceCurve.length, maxForceCurvePointCount)
-  const sampleInterval = forceCurve.length > 1 ? toFitUint16((stroke.driveLength ?? 0) / (forceCurve.length - 1)) : undefined
-
-  // BE AWARE: all force curves must be padded/trimmed to exactly match maxForceCurvePointCount. Any underrun or overrun will crash both encoders and decoders!
+  const sampleInterval = forceCurve.length > 1 && hasDriveLength ? Math.round(stroke.driveLength / (forceCurve.length - 1)) : undefined
+  // Negative forces are written as 0 (as the standard requires). A curve with a sample above 2000 N is not plausible and is left out entirely
+  const forceCurveIsPlausible = forceCurve.slice(0, forceCurvePointCount).every(force => !(Number(force) > 2000))
   const forceCurveSamples = Array.from({ length: maxForceCurvePointCount }, (_, i) => {
     const force = i < forceCurvePointCount ? Number(forceCurve[i]) : 0
-    return Number.isFinite(force) ? Math.min(65534, Math.max(0, Math.round(force * 10))) : 0
+    return Number.isFinite(force) ? Math.max(0, Math.round(force * 10)) : 0
   })
 
   const developerFieldValues: DeveloperFieldValue[] = [
     { developer_data_index: 0, field_num: 9, value: workoutState },
-    ...(strokeWork != undefined ? [{ developer_data_index: 0, field_num: 19, value: strokeWork }] : []),
-    ...(dragFactor != undefined ? [{ developer_data_index: 0, field_num: 2, value: dragFactor }] : []),
-    ...(driveDuration != undefined ? [{ developer_data_index: 0, field_num: 1, value: driveDuration }] : []),
-    ...(recoveryDuration != undefined ? [{ developer_data_index: 0, field_num: 3, value: recoveryDuration }] : []),
-    ...(driveLength != undefined ? [{ developer_data_index: 0, field_num: 0, value: driveLength }] : []),
-    ...(averageBoatSpeed != undefined ? [{ developer_data_index: 0, field_num: 8, value: averageBoatSpeed }] : []),
-    ...(averageDriveForce != undefined ? [{ developer_data_index: 0, field_num: 6, value: averageDriveForce }] : []),
-    ...(peakDriveForce != undefined ? [{ developer_data_index: 0, field_num: 7, value: peakDriveForce }] : []),
-    ...(peakDriveForce != undefined ? [{ developer_data_index: 0, field_num: 17, value: (stroke.peakDriveForcePosition ?? 0) * 100 }] : []),
-    ...(peakDriveForce != undefined && Number.isFinite(peakForcePositionAbs) && peakForcePositionAbs >= 0 ? [{ developer_data_index: 0, field_num: 18, value: Math.min(65534, peakForcePositionAbs) }] : []),
-    ...(forceCurvePointCount > 1 && (sampleInterval ?? 0) > 0
+    ...((stroke.strokeWork ?? 0) > 0 && Math.round(stroke.strokeWork) < 65535 ? [{ developer_data_index: 0, field_num: 19, value: Math.round(stroke.strokeWork) }] : []),
+    ...((stroke.dragFactor ?? 0) > 0 && Math.round(stroke.dragFactor) < 65535 ? [{ developer_data_index: 0, field_num: 2, value: Math.round(stroke.dragFactor) }] : []),
+    ...((stroke.driveDuration ?? 0) > 0 && Math.round(stroke.driveDuration) < 65535 ? [{ developer_data_index: 0, field_num: 1, value: Math.round(stroke.driveDuration) }] : []),
+    ...((stroke.recoveryDuration ?? 0) > 0 && Math.round(stroke.recoveryDuration) < 65535 ? [{ developer_data_index: 0, field_num: 3, value: Math.round(stroke.recoveryDuration) }] : []),
+    ...(hasDriveLength ? [{ developer_data_index: 0, field_num: 0, value: Math.round(stroke.driveLength) }] : []),
+    ...((stroke.linearVelocity ?? 0) > 0 && stroke.linearVelocity <= 8.5 ? [{ developer_data_index: 0, field_num: 8, value: Math.round(stroke.linearVelocity * 100) }] : []),
+    ...(maxForceCurvePointCount > 0 && (stroke.averageDriveForce ?? 0) > 0 && stroke.averageDriveForce <= 2000 ? [{ developer_data_index: 0, field_num: 6, value: Math.round(stroke.averageDriveForce * 10) }] : []),
+    ...(hasPeakDriveForce ? [{ developer_data_index: 0, field_num: 7, value: Math.round(stroke.peakDriveForce * 10) }] : []),
+    ...(hasPeakDriveForce && (stroke.peakDriveForcePosition ?? -1) >= 0 && Math.round(stroke.peakDriveForcePosition * 100) < 65535 ? [{ developer_data_index: 0, field_num: 17, value: Math.round(stroke.peakDriveForcePosition * 100) }] : []),
+    ...(hasPeakDriveForce && peakForcePositionAbs != undefined && peakForcePositionAbs >= 0 && peakForcePositionAbs < 65535 ? [{ developer_data_index: 0, field_num: 18, value: peakForcePositionAbs }] : []),
+    ...(forceCurvePointCount > 1 && forceCurveIsPlausible && (sampleInterval ?? 0) > 0 && (sampleInterval as number) < 65535
       ? [
           { developer_data_index: 0, field_num: 90, value: 2 },
           { developer_data_index: 0, field_num: 91, value: sampleInterval as number },
@@ -871,52 +848,20 @@ async function createTrackPoint (writer: any, stroke: Stroke, restWindows: { sta
     'record',
     {
       timestamp: writer.time(new Date(stroke.timestamp)),
-      ...(stroke.totalLinearDistance != undefined ? { distance: stroke.totalLinearDistance } : {}),
-      ...(stroke.totalWork != undefined ? { accumulated_power: stroke.totalWork } : {}),
-      ...(stroke.totalCalories != undefined ? { calories: stroke.totalCalories } : {}),
-      ...(stroke.strokeNumber != undefined ? { total_cycles: stroke.strokeNumber } : {}),
+      ...(stroke.totalLinearDistance != undefined && stroke.totalLinearDistance * 100 < 4294967295 ? { distance: stroke.totalLinearDistance } : {}),
+      ...(stroke.totalWork != undefined && stroke.totalWork < 4294967295 ? { accumulated_power: stroke.totalWork } : {}),
+      ...(stroke.totalCalories != undefined && stroke.totalCalories < 65535 ? { calories: stroke.totalCalories } : {}),
+      ...(stroke.strokeNumber != undefined && stroke.strokeNumber < 4294967295 ? { total_cycles: stroke.strokeNumber } : {}),
       activity_type: 'fitnessEquipment',
-      ...(((speed ?? 0) > 0 || (stroke.boundaryMarker && speed != undefined)) ? { speed: speed } : {}),
-      ...(((power ?? 0) > 0 || (stroke.boundaryMarker && power != undefined)) ? { power: power } : {}),
-      // The integer cadence is rounded (not truncated), as the standard requires, and is stored in a uint8
-      ...((stroke.strokeRate ?? 0) > 0 && Math.round(stroke.strokeRate as number) < 255 ? { cadence: Math.round(stroke.strokeRate as number) } : {}),
-      ...((stroke.strokeRate ?? 0) > 0 ? { cadence256: stroke.strokeRate } : {}),
-      ...((stroke.strokeDistance ?? 0) > 0 ? { cycle_length16: stroke.strokeDistance } : {}),
+      ...(((speed ?? 0) > 0 || (stroke.boundaryMarker && (speed ?? -1) >= 0)) && speed <= 8.5 ? { speed: speed } : {}),
+      ...(((power ?? 0) > 0 || (stroke.boundaryMarker && (power ?? -1) >= 0)) && power <= 1650 ? { power: power } : {}),
+      ...((stroke.strokeRate ?? 0) >= 10 && stroke.strokeRate <= 200 ? { cadence: Math.round(stroke.strokeRate as number) } : {}),
+      ...((stroke.strokeRate ?? 0) >= 10 && stroke.strokeRate <= 200 ? { cadence256: stroke.strokeRate } : {}),
+      ...((stroke.strokeDistance ?? 0) > 0 && stroke.strokeDistance * 100 < 65535 ? { cycle_length16: stroke.strokeDistance } : {}),
       ...((stroke.dragFactor ?? 0) > 0 && (stroke.dragFactor as number) < 255 ? { resistance: stroke.dragFactor } : {}), // As the data is stored in an int8, we need to guard against exceeding that
-      ...((stroke.heartrate ?? 0) > 0 ? { heart_rate: stroke.heartrate } : {}),
-      ...(stroke.averageDriveForce != undefined ? { force: stroke.averageDriveForce } : {})
+      ...((stroke.heartrate ?? 0) > 0 && stroke.heartrate < 255 ? { heart_rate: stroke.heartrate } : {}),
+      ...(stroke.averageDriveForce != undefined && stroke.averageDriveForce >= 0 && stroke.averageDriveForce <= 2000 ? { force: stroke.averageDriveForce } : {})
     },
     developerFieldValues
   )
-}
-
-/*
- * Supporting functions
- */
-
-/**
- * The database stores durations and periods as whole milliseconds, while the
- * FIT format's standard time fields (total_elapsed_time, total_timer_time,
- * total_moving_time and the like) are expressed in seconds. This converts a
- * stored millisecond value to the seconds the FIT field expects; null passes
- * through so an absent value stays absent.
- *
- */
-function msToFitSeconds (ms: number | null | undefined): number | undefined {
-  if (ms === null || ms === undefined || !Number.isFinite(ms) || ms < 0) return undefined
-  return ms / 1000
-}
-
-/**
- * The FitWriter only applies the declared scale to native fields. A developer
- * field value is written to the file as-is, so it has to be multiplied by the
- * scale declared in its field_description here, and rounded to an integer.
- * Returns undefined for a missing, non-numeric or non-positive value, so that
- * the field is left out of the file instead of holding invalid data. A value that
- * would not fit is clipped to 65534, as 65535 is the FIT invalid value of a uint16.
- * @see {@link https://github.com/MoveLab-Studio/rowing-data-standard/blob/main/spec/FIT_STANDARD.md|section 7.2 of the rowing data standard}
- */
-function toFitUint16 (value: number | null | undefined, scale = 1): number | undefined {
-  if (value === null || value === undefined || !Number.isFinite(value) || !(value > 0)) return undefined
-  return Math.min(65534, Math.round(value * scale))
 }
