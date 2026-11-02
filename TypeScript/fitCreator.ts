@@ -55,6 +55,8 @@ export async function sessionToFit (sessionId: number, dbPath?: string): Promise
       log.error(`fitRecorder: unknown session ${sessionId}`)
       return undefined
     }
+    // The complete flag is a semaphore: it guards against a race condition where a dirty read of the database (a row that is still being written)
+    // would crash the entire implementation, as the fit-file-writer does not handle undefined well
     if (session.complete === null || !((session.complete ?? 0) > 0)) {
       log.debug(`fitRecorder: session ${sessionId} is not marked complete (yet), is the session still active?`)
       return undefined
@@ -233,19 +235,6 @@ export async function workoutToFit (workout: WorkoutData): Promise<DataView | un
     'field_description',
     {
       developer_data_index: 0,
-      field_definition_number: 9,
-      fit_base_type_id: 'uint8',
-      field_name: 'WorkoutState',
-      scale: 1
-    },
-    null,
-    true
-  )
-
-  fitWriter.writeMessage(
-    'field_description',
-    {
-      developer_data_index: 0,
       field_definition_number: 10,
       fit_base_type_id: 'uint8',
       field_name: 'RecordingStrategy',
@@ -264,8 +253,7 @@ export async function workoutToFit (workout: WorkoutData): Promise<DataView | un
         field_definition_number: 17,
         fit_base_type_id: 'uint16',
         field_name: 'PeakForcePositionNorm',
-        scale: 100,
-        units: '%'
+        scale: 1
       },
       null,
       true
@@ -401,10 +389,9 @@ export async function workoutToFit (workout: WorkoutData): Promise<DataView | un
 
   /*
    * The session summary
-   * Several parameters are calculated at the closure of the session, or after it by a postprocessing run. These should be called with caution																																		  
+   * Several parameters are calculated at the closure of the session, or after it by a postprocessing run. These should be called with caution
    */
   const developerFieldValues: DeveloperFieldValue[] = [
-    ...((session.dragFactor ?? 0) > 0 && Math.round(session.dragFactor) < 65535 ? [{ developer_data_index: 0, field_num: 2, value: Math.round(session.dragFactor) }] : []),
     // RecordingStrategy: StrokeBoundary
     { developer_data_index: 0, field_num: 10, value: 1 }
   ]
@@ -508,8 +495,8 @@ async function writeSplits (writer: any, workout: WorkoutData): Promise<void> {
       ...((session.averageStrokerate ?? 0) >= 10 && session.averageStrokerate <= 200 ? { avg_cadence: session.averageStrokerate } : {}),
       ...((session.maximumStrokerate ?? 0) >= 10 && session.maximumStrokerate <= 200 ? { max_cadence: session.maximumStrokerate } : {}),
       ...(session.totalMovingCalories != undefined && session.totalMovingCalories < 4294967295 ? { total_calories: session.totalMovingCalories } : {}),
-      ...(activeAverageHeartrate > 0 && activeAverageHeartrate < 255 ? { avg_heart_rate: activeAverageHeartrate } : {}),
-      ...(activeMaximumHeartrate > 0 && activeMaximumHeartrate < 255 ? { max_heart_rate: activeMaximumHeartrate } : {})
+      ...(activeAverageHeartrate > 0 && activeAverageHeartrate < 250 ? { avg_heart_rate: activeAverageHeartrate } : {}),
+      ...(activeMaximumHeartrate > 0 && activeMaximumHeartrate < 250 ? { max_heart_rate: activeMaximumHeartrate } : {})
     },
     null,
     restIntervals.length === 0
@@ -531,8 +518,8 @@ async function writeSplits (writer: any, workout: WorkoutData): Promise<void> {
         avg_cadence: 0,
         max_cadence: 0,
         ...(session.totalRestCalories != undefined && session.totalRestCalories < 4294967295 ? { total_calories: session.totalRestCalories } : {}),
-        ...(restAverageHeartrate > 0 && restAverageHeartrate < 255 ? { avg_heart_rate: restAverageHeartrate } : {}),
-        ...(restMaximumHeartrate > 0 && restMaximumHeartrate < 255 ? { max_heart_rate: restMaximumHeartrate } : {})
+        ...(restAverageHeartrate > 0 && restAverageHeartrate < 250 ? { avg_heart_rate: restAverageHeartrate } : {}),
+        ...(restMaximumHeartrate > 0 && restMaximumHeartrate < 250 ? { max_heart_rate: restMaximumHeartrate } : {})
       },
       null,
       true
@@ -556,10 +543,9 @@ async function writeSplits (writer: any, workout: WorkoutData): Promise<void> {
  * Creation of the active fit-split (= Rowing interval)
  */
 async function createActiveSplit (writer: any, workout: WorkoutData, interval: Interval): Promise<void> {
+  // The complete flag is a semaphore: it guards against a race condition where a dirty read of the database (a row that is still being written)
+  // would crash the entire implementation, as the fit-file-writer does not handle undefined well
   if (interval.complete !== true) { return }
-  const developerFieldValues: DeveloperFieldValue[] = [
-    ...((interval.dragFactor ?? 0) > 0 && Math.round(interval.dragFactor) < 65535 ? [{ developer_data_index: 0, field_num: 2, value: Math.round(interval.dragFactor) }] : [])
-  ]
 
   writer.writeMessage(
     'split',
@@ -584,10 +570,10 @@ async function createActiveSplit (writer: any, workout: WorkoutData, interval: I
       start_time: writer.time(new Date(interval.startTime)),
       ...(interval.startDistance != undefined && interval.startDistance * 100 < 4294967295 ? { start_distance: interval.startDistance } : {}),
       ...(interval.endTime != undefined ? { end_time: writer.time(new Date(interval.endTime)) } : {}),
-      ...((interval.averageHeartrate ?? 0) > 0 && interval.averageHeartrate < 255 ? { avg_heart_rate: interval.averageHeartrate } : {}),
-      ...((interval.maximumHeartrate ?? 0) > 0 && interval.maximumHeartrate < 255 ? { max_heart_rate: interval.maximumHeartrate } : {})
+      ...((interval.averageHeartrate ?? 0) > 0 && interval.averageHeartrate < 250 ? { avg_heart_rate: interval.averageHeartrate } : {}),
+      ...((interval.maximumHeartrate ?? 0) > 0 && interval.maximumHeartrate < 250 ? { max_heart_rate: interval.maximumHeartrate } : {})
     },
-    developerFieldValues,
+    null,
     (interval.intervalNumber + 1) === workout.intervals.length
   )
 }
@@ -596,6 +582,8 @@ async function createActiveSplit (writer: any, workout: WorkoutData, interval: I
  * Creation of the rest fit-split (= A planned rowing rest interval)
  */
 async function createRestSplit (writer: any, workout: WorkoutData, interval: Interval): Promise<void> {
+  // The complete flag is a semaphore: it guards against a race condition where a dirty read of the database (a row that is still being written)
+  // would crash the entire implementation, as the fit-file-writer does not handle undefined well
   if (interval.complete !== true) { return }
 
   writer.writeMessage(
@@ -621,8 +609,8 @@ async function createRestSplit (writer: any, workout: WorkoutData, interval: Int
       start_time: writer.time(new Date(interval.startTime)),
       ...(interval.startDistance != undefined && interval.startDistance * 100 < 4294967295 ? { start_distance: interval.startDistance } : {}),
       ...(interval.endTime != undefined ? { end_time: writer.time(new Date(interval.endTime)) } : {}),
-      ...((interval.averageHeartrate ?? 0) > 0 && interval.averageHeartrate < 255 ? { avg_heart_rate: interval.averageHeartrate } : {}),
-      ...((interval.maximumHeartrate ?? 0) > 0 && interval.maximumHeartrate < 255 ? { max_heart_rate: interval.maximumHeartrate } : {})
+      ...((interval.averageHeartrate ?? 0) > 0 && interval.averageHeartrate < 250 ? { avg_heart_rate: interval.averageHeartrate } : {}),
+      ...((interval.maximumHeartrate ?? 0) > 0 && interval.maximumHeartrate < 250 ? { max_heart_rate: interval.maximumHeartrate } : {})
     },
     null,
     (interval.intervalNumber + 1) === workout.intervals.length
@@ -645,10 +633,9 @@ async function writeLaps (writer: any, workout: WorkoutData): Promise<void> {
 
 async function createActiveLap (writer: any, workout: WorkoutData, split: Split): Promise<void> {
   // It is an active lap, after we make sure it is a completed lap, we can write it
+  // The complete flag is a semaphore: it guards against a race condition where a dirty read of the database (a row that is still being written)
+  // would crash the entire implementation, as the fit-file-writer does not handle undefined well
   if (split.complete !== true) { return }
-  const developerFieldValues: DeveloperFieldValue[] = [
-    ...((split.dragFactor ?? 0) > 0 && Math.round(split.dragFactor) < 65535 ? [{ developer_data_index: 0, field_num: 2, value: Math.round(split.dragFactor) }] : [])
-  ]
 
   writer.writeMessage(
     'lap',
@@ -678,17 +665,19 @@ async function createActiveLap (writer: any, workout: WorkoutData, split: Split)
       ...(split.maximumPower != undefined && split.maximumPower >= 0 && split.maximumPower <= 1650 ? { max_power: split.maximumPower } : {}),
       ...(split.averageHandleAvgForce != undefined && split.averageHandleAvgForce >= 0 && split.averageHandleAvgForce <= 2000 ? { avg_force: split.averageHandleAvgForce } : {}),
       ...(split.maximumHandleAvgForce != undefined && split.maximumHandleAvgForce >= 0 && split.maximumHandleAvgForce <= 2000 ? { max_force: split.maximumHandleAvgForce } : {}),
-      ...((split.minimumHeartrate ?? 0) > 0 && split.minimumHeartrate < 255 ? { min_heart_rate: split.minimumHeartrate } : {}),
-      ...((split.averageHeartrate ?? 0) > 0 && split.averageHeartrate < 255 ? { avg_heart_rate: split.averageHeartrate } : {}),
-      ...((split.maximumHeartrate ?? 0) > 0 && split.maximumHeartrate < 255 ? { max_heart_rate: split.maximumHeartrate } : {})
+      ...((split.minimumHeartrate ?? 0) > 0 && split.minimumHeartrate < 250 ? { min_heart_rate: split.minimumHeartrate } : {}),
+      ...((split.averageHeartrate ?? 0) > 0 && split.averageHeartrate < 250 ? { avg_heart_rate: split.averageHeartrate } : {}),
+      ...((split.maximumHeartrate ?? 0) > 0 && split.maximumHeartrate < 250 ? { max_heart_rate: split.maximumHeartrate } : {})
     },
-    developerFieldValues,
+    null,
     workout.splits.length === (split.splitNumber + 1)
   )
 }
 
 async function createRestLap (writer: any, workout: WorkoutData, split: Split): Promise<void> {
   // First, make sure the rest lap has ended
+  // As with the complete flag of the other rows, this is a semaphore against a dirty read of a row that is still being written, which would crash the
+  // entire implementation, as the fit-file-writer does not handle undefined well
   if (split.endTime === null) { return }
 
   writer.writeMessage(
@@ -716,9 +705,9 @@ async function createRestLap (writer: any, workout: WorkoutData, split: Split): 
       max_speed: 0,
       avg_power: 0,
       max_power: 0,
-      ...((split.minimumHeartrate ?? 0) > 0 && split.minimumHeartrate < 255 ? { min_heart_rate: split.minimumHeartrate } : {}),
-      ...((split.averageHeartrate ?? 0) > 0 && split.averageHeartrate < 255 ? { avg_heart_rate: split.averageHeartrate } : {}),
-      ...((split.maximumHeartrate ?? 0) > 0 && split.maximumHeartrate < 255 ? { max_heart_rate: split.maximumHeartrate } : {})
+      ...((split.minimumHeartrate ?? 0) > 0 && split.minimumHeartrate < 250 ? { min_heart_rate: split.minimumHeartrate } : {}),
+      ...((split.averageHeartrate ?? 0) > 0 && split.averageHeartrate < 250 ? { avg_heart_rate: split.averageHeartrate } : {}),
+      ...((split.maximumHeartrate ?? 0) > 0 && split.maximumHeartrate < 250 ? { max_heart_rate: split.maximumHeartrate } : {})
     },
     null,
     workout.splits.length === (split.splitNumber + 1)
@@ -729,6 +718,7 @@ async function createRestLap (writer: any, workout: WorkoutData, split: Split): 
  * Write all events to the FIT-file. The recorder does not store a timer-event
  * timeline; it is deduced here by replaying the rest splits: each rest split
  * stops the timer at its start and restarts it at its end.
+ * @see {@link https://developer.garmin.com/fit/articles/file-types/activity.html|the Garmin description of the activity file type, including its events}
  */
 async function writeEvents (writer: any, workout: WorkoutData): Promise<void> {
   // Start of the session
@@ -770,8 +760,7 @@ async function addEvent (writer: any, time: Date, event: string, eventType: stri
  */
 async function writeRecords (writer: any, workout: WorkoutData, maxForceCurvePointCount: number): Promise<void> {
   const { session, strokes, splits } = workout
-  // The windows of the rest splits, which determine the WorkoutState of a record. The windows are
-  // half-open: the end of a rest split is the start of the next split, and belongs to that one
+  // The windows of the rest splits, which are used to recognise the boundary marker at the end of a pause
   const restWindows = splits
     .filter(s => s.intensity !== 'active' && s.endTime !== null)
     .map(s => ({ start: s.startTime, end: s.endTime as number }))
@@ -791,9 +780,6 @@ async function writeRecords (writer: any, workout: WorkoutData, maxForceCurvePoi
  * @see {@link https://github.com/MoveLab-Studio/rowing-data-standard/blob/main/spec/FIT_STANDARD.md|the harmonised rowing data FIT specifications for definitions and more information}
  */
 async function createTrackPoint (writer: any, stroke: Stroke, restWindows: { start: number; end: number }[], maxForceCurvePointCount: number): Promise<void> {
-  // WorkoutState uses the values of the native FIT intensity enum: 0 = active, 1 = rest
-  const workoutState = restWindows.some(w => stroke.timestamp >= w.start && stroke.timestamp < w.end) ? 1 : 0
-
   // A boundary marker has a valid pace and power, unless it is at the end of a pause, as the flywheel was standing still
   // then. Only for those markers pace and power are reported as 0. The marker at the start of a pause is a normal one
   const isPauseEnd = stroke.boundaryMarker && restWindows.some(w => stroke.timestamp > w.start && stroke.timestamp <= w.end)
@@ -802,16 +788,15 @@ async function createTrackPoint (writer: any, stroke: Stroke, restWindows: { sta
 
   // The peak force dependent values are only written when there is a force curve to report
   const hasPeakDriveForce = maxForceCurvePointCount > 0 && (stroke.peakDriveForce ?? 0) > 0 && stroke.peakDriveForce <= 2000
-  // The absolute handle position (mm) at peak force is the normalised position (0-1) along the drive length
-  const peakForcePositionAbs = Math.round((stroke.peakDriveForcePosition ?? 0) * (stroke.driveLength ?? 0))
-
   // The handle positions are derived from the drive length, so they are only reported when the drive length is plausible (100-2100 mm)
   const hasDriveLength = (stroke.driveLength ?? 0) >= 100 && stroke.driveLength <= 2100
 
   // The absolute handle position (mm) at peak force is the normalised position (0-1) of the peak force along the drive length
   const peakForcePositionAbs = stroke.peakDriveForcePosition != undefined && hasDriveLength ? Math.round(stroke.peakDriveForcePosition * stroke.driveLength) : undefined
-  // The force curve is sampled uniformly along the handle distance (abscissa type 2). The sample interval is the
-  // spacing of the samples over the full curve, so it stays correct when the curve has to be cut to the declared size
+  // The force curve is sampled uniformly along the handle distance (abscissa type 2). The standard defines the sample interval as the drive length
+  // divided by (point count - 1). We divide by the number of points of the full curve (forceCurve.length - 1) instead of the number of points written
+  // (forceCurvePointCount - 1): both are the same, unless the curve has to be cut to the declared size. The written samples then keep their original
+  // spacing, which makes this the interval that is correct for them
   const forceCurve = stroke.forceCurve ?? []
   const forceCurvePointCount = Math.min(forceCurve.length, maxForceCurvePointCount)
   const sampleInterval = forceCurve.length > 1 && hasDriveLength ? Math.round(stroke.driveLength / (forceCurve.length - 1)) : undefined
@@ -823,7 +808,6 @@ async function createTrackPoint (writer: any, stroke: Stroke, restWindows: { sta
   })
 
   const developerFieldValues: DeveloperFieldValue[] = [
-    { developer_data_index: 0, field_num: 9, value: workoutState },
     ...((stroke.strokeWork ?? 0) > 0 && Math.round(stroke.strokeWork) < 65535 ? [{ developer_data_index: 0, field_num: 19, value: Math.round(stroke.strokeWork) }] : []),
     ...((stroke.dragFactor ?? 0) > 0 && Math.round(stroke.dragFactor) < 65535 ? [{ developer_data_index: 0, field_num: 2, value: Math.round(stroke.dragFactor) }] : []),
     ...((stroke.driveDuration ?? 0) > 0 && Math.round(stroke.driveDuration) < 65535 ? [{ developer_data_index: 0, field_num: 1, value: Math.round(stroke.driveDuration) }] : []),
@@ -832,7 +816,7 @@ async function createTrackPoint (writer: any, stroke: Stroke, restWindows: { sta
     ...((stroke.linearVelocity ?? 0) > 0 && stroke.linearVelocity <= 8.5 ? [{ developer_data_index: 0, field_num: 8, value: Math.round(stroke.linearVelocity * 100) }] : []),
     ...(maxForceCurvePointCount > 0 && (stroke.averageDriveForce ?? 0) > 0 && stroke.averageDriveForce <= 2000 ? [{ developer_data_index: 0, field_num: 6, value: Math.round(stroke.averageDriveForce * 10) }] : []),
     ...(hasPeakDriveForce ? [{ developer_data_index: 0, field_num: 7, value: Math.round(stroke.peakDriveForce * 10) }] : []),
-    ...(hasPeakDriveForce && (stroke.peakDriveForcePosition ?? -1) >= 0 && Math.round(stroke.peakDriveForcePosition * 100) < 65535 ? [{ developer_data_index: 0, field_num: 17, value: Math.round(stroke.peakDriveForcePosition * 100) }] : []),
+    ...(hasPeakDriveForce && (stroke.peakDriveForcePosition ?? -1) >= 0 && Math.round(stroke.peakDriveForcePosition * 10000) <= 10000 ? [{ developer_data_index: 0, field_num: 17, value: Math.round(stroke.peakDriveForcePosition * 10000) }] : []),
     ...(hasPeakDriveForce && peakForcePositionAbs != undefined && peakForcePositionAbs >= 0 && peakForcePositionAbs < 65535 ? [{ developer_data_index: 0, field_num: 18, value: peakForcePositionAbs }] : []),
     ...(forceCurvePointCount > 1 && forceCurveIsPlausible && (sampleInterval ?? 0) > 0 && (sampleInterval as number) < 65535
       ? [
@@ -858,8 +842,8 @@ async function createTrackPoint (writer: any, stroke: Stroke, restWindows: { sta
       ...((stroke.strokeRate ?? 0) >= 10 && stroke.strokeRate <= 200 ? { cadence: Math.round(stroke.strokeRate as number) } : {}),
       ...((stroke.strokeRate ?? 0) >= 10 && stroke.strokeRate <= 200 ? { cadence256: stroke.strokeRate } : {}),
       ...((stroke.strokeDistance ?? 0) > 0 && stroke.strokeDistance * 100 < 65535 ? { cycle_length16: stroke.strokeDistance } : {}),
-      ...((stroke.dragFactor ?? 0) > 0 && (stroke.dragFactor as number) < 255 ? { resistance: stroke.dragFactor } : {}), // As the data is stored in an int8, we need to guard against exceeding that
-      ...((stroke.heartrate ?? 0) > 0 && stroke.heartrate < 255 ? { heart_rate: stroke.heartrate } : {}),
+      ...((stroke.dragFactor ?? 0) > 0 && (stroke.dragFactor as number) < 255 ? { resistance: stroke.dragFactor } : {}), // The data is stored in a uint8, where 255 is the invalid value, so it is never written
+      ...((stroke.heartrate ?? 0) > 0 && stroke.heartrate < 250 ? { heart_rate: stroke.heartrate } : {}),
       ...(stroke.averageDriveForce != undefined && stroke.averageDriveForce >= 0 && stroke.averageDriveForce <= 2000 ? { force: stroke.averageDriveForce } : {})
     },
     developerFieldValues
