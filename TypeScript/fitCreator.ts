@@ -14,7 +14,7 @@
  * @see {@link https://developer.garmin.com/fit/cookbook/encoding-activity-files/|the description of the filestructure and how timestamps}
  * @see {@link https://forums.garmin.com/developer/fit-sdk/b/news-announcements/posts/important-fit-activity-file-message-change|description of the timestamps for summary messages}
  * @see {@link https://developer.garmin.com/fit/cookbook/durations/|how the different times are defined}
- * @see {@link https://github.com/MoveLab-Studio/rowing-data-standard/blob/main/spec/FIT_STANDARD.md|the harmonised rowing data FIT specifications for definitions and interpretations}
+ * @see {@link https://github.com/Rowing-Industry-Trade-Association/rowing-data-standard/blob/main/spec/FIT_STANDARD.md|the harmonised rowing data FIT specifications for definitions and interpretations}
  * We use 'summary last message sequencing' as the stream makes most sense that way
  * As general timestamp we use the session end time, as that is semantically more sound than Garmin's approach of the session start time
  *
@@ -113,7 +113,7 @@ export async function workoutToFit (workout: WorkoutData): Promise<DataView | un
 
   /**
    * Register the developer data source and developer fields
-   * @see {@link https://github.com/MoveLab-Studio/rowing-data-standard/blob/main/spec/FIT_STANDARD.md|the harmonised rowing data FIT specifications for definitions and more information}
+   * @see {@link https://github.com/Rowing-Industry-Trade-Association/rowing-data-standard/blob/main/spec/FIT_STANDARD.md|the harmonised rowing data FIT specifications for definitions and more information}
    */
   fitWriter.writeMessage(
     'developer_data_id',
@@ -777,7 +777,7 @@ async function writeRecords (writer: any, workout: WorkoutData, maxForceCurvePoi
  * @description This creates the individual stroke. As the FitWriter does not apply the
  * declared scale to developer fields, every developer value is scaled here.
  * Some consumers require boundary markers, to mark the start and end of a session and rest periods.
- * @see {@link https://github.com/MoveLab-Studio/rowing-data-standard/blob/main/spec/FIT_STANDARD.md|the harmonised rowing data FIT specifications for definitions and more information}
+ * @see {@link https://github.com/Rowing-Industry-Trade-Association/rowing-data-standard/blob/main/spec/FIT_STANDARD.md|the harmonised rowing data FIT specifications for definitions and more information}
  */
 async function createTrackPoint (writer: any, stroke: Stroke, restWindows: { start: number; end: number }[], maxForceCurvePointCount: number): Promise<void> {
   // A boundary marker has a valid pace and power, unless it is at the end of a pause, as the flywheel was standing still
