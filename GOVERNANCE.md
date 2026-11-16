@@ -14,7 +14,7 @@ If the two ever disagree, the charter wins, and this file is the thing to fix.
 
 ## Part 1 — RITA Data Standards Working Group Charter
 
-Rowing Industry Trade Association - Initial Release Version, November 11, 2026 - Chair: Michael Naughton.*
+*Rowing Industry Trade Association - Initial Release Version, November 11, 2026 - Chair: Michael Naughton.*
 
 The Data Standards Working Group (DSWG) is a small team of a chair and voting
 members that publishes two revisions of the RITA Data Standard each year,
