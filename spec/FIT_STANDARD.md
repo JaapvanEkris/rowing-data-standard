@@ -247,7 +247,7 @@ A common convention for grouping laps into workouts and splits is expected in a 
 | Wash | 14 | SINT16 | 10 | deg | Wash angle (late blade exit) |
 | PeakForceAngle | 15 | SINT16 | 10 | deg | Oar angle at peak force (0° = perpendicular to boat) |
 | EffectiveArc | 16 | UINT16 | 10 | deg | Effective part of the drive arc: Finish − Catch − Slip − Wash |
-| PeakForcePositionNorm | 17 | UINT16 | 1 | | Normalized position of peak force along drive (0-10000) |
+| PeakForcePositionNorm | 17 | UINT16 | 100 | % | Normalized position of peak force along drive (raw 0-10000, scaled 0 - 100%) |
 | PeakForcePositionAbs | 18 | UINT16 | 1 | mm | Absolute handle position at peak force |
 
 **Notes:**
@@ -357,6 +357,13 @@ These fields define the X-axis interpretation for curve data on each Record:
 Curve samples are **uniformly spaced** along the declared abscissa (fields 90-92). Non-uniform source data MUST be resampled before export. The unresampled data MAY additionally be stored in the companion JSON file.
 
 The curve is produced on a best-effort basis: a producer writes the force curve its equipment measures, at the resolution it can, within the limits of §6.5.
+
+When providing a force curve, the following Oarlock fields can be provided for all types (see §5.2 for further information about the field definitions)
+
+| Field Name | ID | Base Type | Scale | Units | Definition |
+|------------|----|-----------| ------|-------|------------|
+| PeakForcePositionNorm | 17 | UINT16 | 100 | % | Normalized position of peak force along drive (raw 0-10000, scaled 0 - 100%) |
+| PeakForcePositionAbs | 18 | UINT16 | 1 | mm | Absolute handle position at peak force |
 
 ### 6.5 Curve Array Format
 
