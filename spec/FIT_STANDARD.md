@@ -247,7 +247,7 @@ A common convention for grouping laps into workouts and splits is expected in a 
 | Wash | 14 | SINT16 | 10 | deg | Wash angle (late blade exit) |
 | PeakForceAngle | 15 | SINT16 | 10 | deg | Oar angle at peak force (0° = perpendicular to boat) |
 | EffectiveArc | 16 | UINT16 | 10 | deg | Effective part of the drive arc: Finish − Catch − Slip − Wash |
-| PeakForcePositionNorm | 17 | UINT16 | 1 | | Normalized position of peak force along drive (0-10000) |
+| PeakForcePositionNorm | 17 | UINT16 | 100 | % | Normalized position of peak force along drive (raw 0-10000, scaled 0 - 100%) |
 | PeakForcePositionAbs | 18 | UINT16 | 1 | mm | Absolute handle position at peak force |
 
 **Notes:**
